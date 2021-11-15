@@ -267,6 +267,7 @@ void deleteData(string file) {
 	fclose(fp);
 }
 
+// Updates the status.txt file with the given files
 void updateStatus(vector<string>& files) {
 	// Add files and SHA1 values 
 	vector<string> fileHashes;
@@ -289,6 +290,7 @@ vector<string> splitString(string& str) {
 	return result;
 }
 
+// Reading files from status.txt
 void readStatusFile() {
 	//read status.txt file
 	ifstream ifs;
@@ -305,8 +307,8 @@ void readStatusFile() {
 	ifs.close();
 }
 
-void printData(vector<string> data, const char* color) {
-
+// Print status files
+void printStatus(vector<string> data, const char* color) {
 	for (auto j : data) {
 		cout << "\t";
 		cout << color + j + RESET << endl;
@@ -314,6 +316,7 @@ void printData(vector<string> data, const char* color) {
 	cout << endl;
 }
 
+// Checking which files are newly created, modified and deleted
 void checkFiles() {
 	vector<string> files;
 	unordered_set<string> us;
@@ -340,17 +343,17 @@ void checkFiles() {
 	if (newFiles.size() == 0 && modifiedFiles.size() == 0 && deletedFiles.size() == 0) {
 		cout << "Working directory clean" << endl;
 	}
-	else if (newFiles.size() != 0) {
-		cout << "New Files: " << endl;
-		printData(newFiles, KGRN);
-	}
-	else if (modifiedFiles.size() != 0) {
-		cout << "Modified Files: " << endl;
-		printData(modifiedFiles, KYEL);
-	}
-	else if (deletedFiles.size() != 0) {
-		cout << "Deleted Files: " << endl;
-		printData(deletedFiles, KRED);
+	else {
+		cout << "Changes to be committed:" << endl;
+		if (newFiles.size() != 0) {
+			printStatus(newFiles, KGRN);
+		}
+		else if (modifiedFiles.size() != 0) {
+			printStatus(modifiedFiles, KYEL);
+		}
+		else if (deletedFiles.size() != 0) {
+			printStatus(deletedFiles, KRED);
+		}
 	}
 }
 
