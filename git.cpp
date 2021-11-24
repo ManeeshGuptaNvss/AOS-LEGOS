@@ -104,7 +104,7 @@ void copyFile(string source, string destination) {
 	fclose(dest);
 }
 
-// Copies file from path to destination
+// Copies Driectory from path to destination
 void copyDirectory(char* path, char* des) {
 	int status = mkdir(des, S_IRUSR | S_IWUSR | S_IXUSR);
 	DIR* d;
@@ -348,10 +348,10 @@ void checkFiles() {
 		if (newFiles.size() != 0) {
 			printStatus(newFiles, KGRN);
 		}
-		else if (modifiedFiles.size() != 0) {
+		if (modifiedFiles.size() != 0) {
 			printStatus(modifiedFiles, KYEL);
 		}
-		else if (deletedFiles.size() != 0) {
+		if (deletedFiles.size() != 0) {
 			printStatus(deletedFiles, KRED);
 		}
 	}
@@ -417,6 +417,17 @@ void status() {
 	checkFiles();
 }
 
+void push(string dest) {
+	string push_loc = dest;
+	mkdir(&push_loc[0], S_IRUSR | S_IWUSR | S_IXUSR);
+
+	string src = "./.git/version";
+	int count = countDirectories(src);
+	src += "/v_" + to_string(count);
+
+	copyDirectory(&src[0], &push_loc[0]);
+}
+
 // ====================================================================================================================
 int main(int argc, char* argv[]) {
 
@@ -434,43 +445,12 @@ int main(int argc, char* argv[]) {
 	else if (arg == "status") {
 		status();
 	}
-	// else if (cmd[1] == "push") {
-	// 	if (cmd.size() != 3) {
-	// 		cout << "[ERR]Enter the valid number of argumenets" << endl;
-	// 		return 0;
-	// 	}
-	// 	string dir_name = cmd[2];
-	// 	string push_loc;
-	// 	push_loc = "." + dir_name;
-
-	// 	mkdir(push_loc.c_str(), S_IRUSR | S_IWUSR | S_IXUSR);
-
-	// 	string src = ".git/version";
-
-
-	// 	DIR* d = opendir(src.c_str());
-
-	// 	if (d) {
-	// 		struct dirent* p;
-
-	// 		vector<dirent*> content;
-
-	// 		while ((p = readdir(d)) != NULL) {
-	// 			content.push_back(p);
-	// 		}
-
-	// 		string src1, final_source;
-	// 		for (int i = 0;i < content.size();i++) {
-	// 			if (content[i]->d_name != "." && content[i]->d_name != "..") {
-	// 				if (content[i]->d_name > src1)src1 = content[i]->d_name;
-	// 			}
-	// 		}
-
-	// 		cout << src1 << endl;
-	// 		final_source = ".git/version/" + src1;
-
-	// 		copyDirectory(&final_source[0], &push_loc[0]);
-	// 	}
-	// }
+	else if (arg == "push") {
+		if (argc != 3) {
+			cout << "[ERR]Enter the valid number of argumenets" << endl;
+			return 0;
+		}
+		push(argv[2]);
+	}
 	return 0;
 }
