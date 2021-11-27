@@ -428,6 +428,61 @@ void push(string dest) {
 	copyDirectory(&src[0], &push_loc[0]);
 }
 
+void retrieve(int version)
+{
+	// Checking the existance of the input version 
+	int existing_versions=countDirectories("./.git/version");
+	if(version>existing_versions)
+	{
+		cout<<"Specified version doesn't exists\n";
+	}
+	// listing all files in the input version
+	else{
+		vector<string> files_in_version;
+		string pathStr="./.git/version/v_"+to_string(version);
+		const char* path = pathStr.c_str();
+		listFiles(path,files_in_version);
+		for(auto &x:files_in_version)
+		{	
+			// finding the last occurance of '/' in the file path
+			int pos=x.find_last_of('/');
+			cout<<x.substr(pos+1)<<endl;
+		}
+	}
+}
+
+void retriveSHA(int version,string hashValue)
+{
+	// Checking the existance of the input version 
+	int existing_versions=countDirectories("./.git/version");
+	if(version>existing_versions)
+	{
+		cout<<"Specified version doesn't exists\n";
+	}
+	// listing all files in the input version
+	else{
+		vector<string> files_in_version;
+		string pathStr="./.git/version/v_"+to_string(version);
+		const char* path = pathStr.c_str();
+		listFiles(path,files_in_version);
+		for(auto &x:files_in_version)
+		{	
+			// finding the last occurance of '/' in the file path
+			int pos=x.find_last_of('/');
+			// cout<<x.substr(pos+1)<<endl;
+			string sha_calculated=SHA1::from_file(x.substr(pos+1));
+			if(sha_calculated==hashValue)
+			{
+				cout<<x.substr(pos+1)<<endl;
+				return;
+			}
+		}
+		cout<<"file with given sha value doesn't exists"<<endl;
+	}
+
+}
+
+
 // ====================================================================================================================
 int main(int argc, char* argv[]) {
 
@@ -451,6 +506,20 @@ int main(int argc, char* argv[]) {
 			return 0;
 		}
 		push(argv[2]);
+	}
+	// ./git retrieve -a vno
+	else if (arg=="retrieve" && strcmp(argv[2],"-a")==0 )
+	{
+		// cout<<argv[2]<<" "<<argv[3]<<endl;
+		retrieve(stoi(argv[3]));
+
+	}
+	// ./git retrieve SHAvalue vno
+	else if(arg=="retrieve" )
+	{
+		// cout<<"retrieve SHA is called\n";
+		string hashValue=argv[2];
+		retriveSHA(stoi(argv[3]),hashValue);
 	}
 	return 0;
 }
