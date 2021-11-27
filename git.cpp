@@ -12,6 +12,7 @@
 #include<fcntl.h>
 #include<sys/stat.h>
 #include<dirent.h>
+#include<algorithm>
 
 #include"sha1.hpp"
 
@@ -21,9 +22,6 @@
 #define RESET "\033[0m"
 
 using namespace std;
-
-unordered_map<string, string> statusFiles;
-vector<string> newFiles, modifiedFiles, deletedFiles;
 
 // Shows errors
 void showError(string str) {
@@ -73,6 +71,18 @@ int countDirectories(string path) {
 	return count;
 }
 
+// Tokenize the given string into words
+vector<string> splitString(string& str) {
+	istringstream iss(str);
+	vector<string> result;
+	string word;
+	while (iss >> word) {
+		result.push_back(word);
+	}
+	return result;
+}
+
+
 // Read line by line from the file
 vector<string> readFile(string file_name) {
 	// Reading the file
@@ -85,6 +95,36 @@ vector<string> readFile(string file_name) {
 	ifs.close();
 	return result;
 }
+
+unordered_set<string> readFileSet(string file_name) {
+	// Reading the file
+	unordered_set<string> result;
+	ifstream ifs(file_name, ifstream::in);
+	for (string line; getline(ifs, line);) {
+		result.insert(line);
+	}
+	// Closing the file
+	ifs.close();
+	return result;
+}
+
+unordered_map<string, string> readFileMap(string file_name) {
+	//read status.txt file
+	ifstream ifs;
+	ifs.open(file_name);
+	unordered_map<string, string> result;
+	while (!ifs.eof()) {
+		string line, stData, data;
+		int flag;
+		if (getline(ifs, line)) {
+			vector<string> words = splitString(line);
+			result[words[0]] = words[1];
+		}
+	}
+	ifs.close();
+	return result;
+}
+
 
 // Copies file from source to destination
 void copyFile(string source, string destination) {
@@ -219,17 +259,13 @@ bool makeDirectory(const string& path) {
 }
 
 // Update log file
-void updateLog() {
+void updateLog(string text) {
 	// Open log file
 	int countDir = countDirectories("./.git/version");
 	time_t rawtime;
 	time(&rawtime);
 
 	FILE* fp = fopen("./.git/log.txt", "a");
-
-	string text = "commit\n";
-	text += "version: v_" + to_string(countDir + 1) + "\n";
-	text += "date: " + string(ctime(&rawtime)) + "\n\n";
 	fwrite(&text[0], 1, text.length(), fp);
 	fclose(fp);
 }
@@ -281,88 +317,9 @@ void updateStatus(vector<string>& files) {
 	writeData(fileHashes, dest);
 }
 
-// Tokenize the given string into words
-vector<string> splitString(string& str) {
-	istringstream iss(str);
-	vector<string> result;
-	string word;
-	while (iss >> word) {
-		result.push_back(word);
-	}
-	return result;
-}
-
-// Reading files from status.txt
-void readStatusFile() {
-	//read status.txt file
-	ifstream ifs;
-	ifs.open("./.git/status.txt");
-
-	while (!ifs.eof()) {
-		string line, stData, data;
-		int flag;
-		if (getline(ifs, line)) {
-			vector<string> words = splitString(line);
-			statusFiles[words[0]] = words[1];
-		}
-	}
-	ifs.close();
-}
-
-// Print status files
-void printStatus(vector<string> data, const char* color) {
-	for (auto j : data) {
-		cout << "\t";
-		cout << color + j + RESET << endl;
-	}
-	cout << endl;
-}
-
-// Checking which files are newly created, modified and deleted
-void checkFiles() {
-	vector<string> files;
-	unordered_set<string> us;
-	listFiles(".", files);
-
-	for (int i = 0; i < files.size(); i++) {
-		// If the file is not present in status then it is newly created file
-		if (statusFiles.find(files[i]) == statusFiles.end()) {
-			newFiles.push_back(files[i]);
-		}
-		else {
-			string hash = SHA1::from_file(files[i]);
-			if (hash != statusFiles[files[i]]) {
-				modifiedFiles.push_back(files[i]);
-			}
-		}
-		us.insert(files[i]);
-	}
-	for (auto it : statusFiles) {
-		if (us.find(it.first) == us.end()) {
-			deletedFiles.push_back(it.first);
-		}
-	}
-	if (newFiles.size() == 0 && modifiedFiles.size() == 0 && deletedFiles.size() == 0) {
-		cout << "Working directory clean" << endl;
-	}
-	else {
-		cout << "Changes to be committed:" << endl;
-		if (newFiles.size() != 0) {
-			printStatus(newFiles, KGRN);
-		}
-		if (modifiedFiles.size() != 0) {
-			printStatus(modifiedFiles, KYEL);
-		}
-		if (deletedFiles.size() != 0) {
-			printStatus(deletedFiles, KRED);
-		}
-	}
-}
-
 // ================================================ commands ==========================================================
 
 // Initializes git repo
-// TODO: What if the directory is already as repo
 void init() {
 	char path[PATH_MAX];
 	getcwd(path, PATH_MAX);
@@ -378,16 +335,54 @@ void init() {
 	open((HomeDir + "/add.txt").c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 }
 
-void add() {
-	vector<string> files;
-	listFiles(".", files);
+void add(string file) {
+	// read from add.txt
 	string dest = "./.git/add.txt";
-	writeData(files, dest);
+	vector<string> addFiles = readFile(dest);
+	vector<string> files_to_be_added;
+	unordered_set<string> addFilesSet;
+
+	for (auto it : addFiles) {
+		addFilesSet.insert(it);
+	}
+
+	// check if add.txt already consist of that files
+	if (file == ".") {
+		listFiles(".", files_to_be_added);
+		for (auto it : files_to_be_added) {
+			if (addFilesSet.find(it) != addFilesSet.end()) {
+				addFilesSet.erase(it);
+			}
+		}
+	}
+	else {
+		// If it's a directory
+		if (isDirExist(file)) {
+			listFiles(&file[0], files_to_be_added);
+		}
+		// If it's a file
+		else {
+			files_to_be_added.push_back(file);
+		}
+
+		// Removing if the file is already in add.txt
+		for (auto it : files_to_be_added) {
+			if (addFilesSet.find(it) != addFilesSet.end()) {
+				addFilesSet.erase(it);
+			}
+		}
+	}
+	// Now append the "add" files 
+	for (auto it : addFilesSet) {
+		files_to_be_added.push_back(it);
+	}
+	// Write the data
+	writeData(files_to_be_added, dest);
 }
 
 void commit() {
 	// Check if "git init" commnad is executed or not.
-		// If there is .git folder in the current directory then it means "git init" was executed
+	// If there is .git folder in the current directory then it means "git init" was executed
 	bool initDone = isDirExist("./.git");
 	if (!initDone) {
 		cout << "Not a git repository." << endl;
@@ -403,20 +398,74 @@ void commit() {
 	}
 
 	// 1. Update the log.txt
-	updateLog();
-	vector<string> files = readFile("./.git/add.txt");
-	// 2. Create a new version folder and add the files in it
-	addFilesToVersionDir(files);
-	// 3. Update the status.txt 
-	updateStatus(files);
-	// 4. Delete the data in add.txt
-	string file = "./.git/add.txt";
-	deleteData(file);
+	int countDir = countDirectories("./.git/version");
+	time_t rawtime;
+	time(&rawtime);
+	string text = "commit\n";
+	text += "version: v_" + to_string(countDir + 1) + "\n";
+	text += "date: " + string(ctime(&rawtime)) + "\n\n";
+	updateLog(text);
+
+	// 2. Adding files to status.txt
+	// Read from status.txt 
+	unordered_map<string, string> statusFiles = readFileMap("./.git/status.txt");
+	// read from add.txt
+	vector<string> addFiles = readFile("./.git/add.txt");
+	// Remove if the file is already in status.txt 
+	for (auto it : addFiles) {
+		if (statusFiles.find(it) != statusFiles.end()) {
+			statusFiles.erase(it);
+		}
+	}
+	// Adding the previous version files to status.txt
+	for (auto it : statusFiles) {
+		addFiles.push_back(it.first);
+	}
+	updateStatus(addFiles);
+
+	// 3. Create a new version folder and add the files in it
+	addFilesToVersionDir(addFiles);
+
+	// 4. Delete add.txt data
+	deleteData("./.git/add.txt");
 }
 
 void status() {
-	readStatusFile();
-	checkFiles();
+	vector<string> allFiles;
+	listFiles(".", allFiles);
+
+	unordered_set<string> addFiles = readFileSet("./.git/add.txt");
+	unordered_map<string, string> statusFiles = readFileMap("./.git/status.txt");
+
+	vector<string> untrackedFiles, to_be_committed_files, modified_files;
+
+	for (auto it : allFiles) {
+		// Untracked files i.e. not present in add.txt and not in status.txt
+		if (addFiles.find(it) == addFiles.end() && statusFiles.find(it) == statusFiles.end()) {
+			untrackedFiles.push_back(it);
+			// cout << "(Untracked)\t" << it << endl;
+		}
+		string hash = SHA1::from_file(it);
+		// Changes to be commited files
+		if (addFiles.find(it) != addFiles.end()) {
+			// cout << "(To be committed)\t" << it << endl;
+			to_be_committed_files.push_back(it);
+		}
+		// Tracked and modified files
+		else if (statusFiles.find(it) != statusFiles.end() && statusFiles[it] != hash) {
+			modified_files.push_back(it);
+			// cout << "(Modified)\t" << it << endl;
+		}
+	}
+	for (auto it : untrackedFiles) {
+		cout << KRED "(Untracked)\t" << it << RESET << endl;
+	}
+	for (auto it : to_be_committed_files) {
+		cout << KGRN "(To be committed)\t" << it << RESET << endl;
+	}
+	for (auto it : modified_files) {
+		cout << KYEL "(Modified)\t" << it << RESET << endl;
+	}
 }
 
 void push(string dest) {
@@ -428,101 +477,95 @@ void push(string dest) {
 	src += "/v_" + to_string(count);
 
 	copyDirectory(&src[0], &push_loc[0]);
+
+	// Update the log.txt
+	int countDir = countDirectories("./.git/version");
+	time_t rawtime;
+	time(&rawtime);
+	string text = "commit\n";
+	// text += "version: v_" + to_string(countDir + 1) + "\n";
+	text += "date: " + string(ctime(&rawtime)) + "\n\n";
+	updateLog(text);
 }
 
 //------------------------Do Not Delete any Function even if it is repeated because they have minor changes----------RollBack---
 
-
-
 set<string>current_directory;
 vector<dirent*> content;
 
-
-void SplitString2(string s, vector<string> &v){
-	
+void SplitString2(string s, vector<string>& v) {
 	string temp = "";
-	for(int i=0;i<s.length();++i){
-		
-		if(s[i]=='/'){
+	for (int i = 0;i < s.length();++i) {
+
+		if (s[i] == '/') {
 			v.push_back(temp);
 			temp = "";
 		}
-		else{
+		else {
 			temp.push_back(s[i]);
 		}
-		
+
 	}
 	v.push_back(temp);
-	
 }
 
-
-
-void delete_file(string Destination ){
+void delete_file(string Destination) {
 	unlink(Destination.c_str());
 	return;
-
-
-
 }
 
+int remove_dir(const char* path) {
+	DIR* d = opendir(path);
+	size_t path_len = strlen(path);
+	int r = -1;
 
-int remove_dir(const char *path) {
-   DIR *d = opendir(path);
-   size_t path_len = strlen(path);
-   int r = -1;
+	if (d) {
+		struct dirent* p;
 
-   if (d) {
-      struct dirent *p;
+		r = 0;
+		while (!r && (p = readdir(d))) {
+			int r2 = -1;
+			char* buf;
+			size_t len;
 
-      r = 0;
-      while (!r && (p=readdir(d))) {
-          int r2 = -1;
-          char *buf;
-          size_t len;
+			/* Skip the names "." and ".." as we don't want to recurse on them. */
+			if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+				continue;
 
-          /* Skip the names "." and ".." as we don't want to recurse on them. */
-          if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
-             continue;
+			len = path_len + strlen(p->d_name) + 2;
+			buf = (char*)malloc(len);
 
-          len = path_len + strlen(p->d_name) + 2; 
-          buf =(char *) malloc(len);
+			if (buf) {
+				struct stat statbuf;
 
-          if (buf) {
-             struct stat statbuf;
+				snprintf(buf, len, "%s/%s", path, p->d_name);
+				if (!stat(buf, &statbuf)) {
+					if (S_ISDIR(statbuf.st_mode))
+						r2 = remove_dir(buf);
+					else
+						r2 = unlink(buf);
+				}
+				free(buf);
+			}
+			r = r2;
+		}
+		closedir(d);
+	}
 
-             snprintf(buf, len, "%s/%s", path, p->d_name);
-             if (!stat(buf, &statbuf)) {
-                if (S_ISDIR(statbuf.st_mode))
-                   r2 = remove_dir(buf);
-                else
-                   r2 = unlink(buf);
-             }
-             free(buf);
-          }
-          r = r2;
-      }
-      closedir(d);
-   }
+	if (!r)
+		r = rmdir(path);
 
-   if (!r)
-      r = rmdir(path);
-
-   return r;
+	return r;
 }
 
-
-
-void copyFile_roll(string source, string destination, char * d_name) {
+void copyFile_roll(string source, string destination, char* d_name) {
 	// cout << source << " " << destination << endl;
-	
-	
-	
-	if(current_directory.find(string(d_name))!=current_directory.end()){
+
+	if (current_directory.find(string(d_name)) != current_directory.end()) {
 		delete_file(&(destination)[0]);
 	}
-	 
-	
+
+
 	char buff[BUFSIZ];
 	FILE* src = fopen(&source[0], "r");
 	FILE* dest = fopen(&destination[0], "w");
@@ -541,10 +584,10 @@ void copyFile_roll(string source, string destination, char * d_name) {
 }
 
 void copyDirectory_roll(char* path, char* des, char* d_name) {
-	if(current_directory.find(string(d_name))!=current_directory.end()){
-		remove_dir(&(string(des)+'/'+string(d_name))[0]);
+	if (current_directory.find(string(d_name)) != current_directory.end()) {
+		remove_dir(&(string(des) + '/' + string(d_name))[0]);
 	}
- 	
+
 	int status = mkdir(des, S_IRUSR | S_IWUSR | S_IXUSR);
 	DIR* d;
 	struct dirent* dir;
@@ -569,10 +612,10 @@ void copyDirectory_roll(char* path, char* des, char* d_name) {
 				}
 				else {
 					if ((S_ISDIR(sb.st_mode))) {
-						copyDirectory_roll(newpath, newdestpath,dir->d_name);
+						copyDirectory_roll(newpath, newdestpath, dir->d_name);
 					}
 					else {
-						copyFile_roll(newpath, newdestpath,dir->d_name);
+						copyFile_roll(newpath, newdestpath, dir->d_name);
 					}
 				}
 			}
@@ -607,12 +650,12 @@ void copy_version(char* path, char* des) {
 					perror("lstat");
 				}
 				else {
-				
+
 					if ((S_ISDIR(sb.st_mode))) {
 						copyDirectory_roll(newpath, newdestpath, dir->d_name);
 					}
 					else {
-						copyFile_roll(newpath, newdestpath,dir->d_name);
+						copyFile_roll(newpath, newdestpath, dir->d_name);
 					}
 				}
 			}
@@ -623,152 +666,149 @@ void copy_version(char* path, char* des) {
 	}
 }
 
-bool check_for_version_delete(string final_source, string path){
+bool check_for_version_delete(string final_source, string path) {
 
 	DIR* d = opendir(final_source.c_str());
-	map<string,bool>new_fd;
-	if(d){
+	map<string, bool>new_fd;
+	if (d) {
 		struct dirent* p;
 		while ((p = readdir(d)) != NULL) {
- 			for(auto it:current_directory){
- 				if(it==p->d_name){
- 					new_fd[p->d_name]==true;
- 					SHA1 s,t;
- 					if(s.from_file(final_source+"/"+p->d_name)!=t.from_file(path+"/"+p->d_name))return false;
- 				}
- 				
- 			}
- 		}
-	
+			for (auto it : current_directory) {
+				if (it == p->d_name) {
+					new_fd[p->d_name] == true;
+					SHA1 s, t;
+					if (s.from_file(final_source + "/" + p->d_name) != t.from_file(path + "/" + p->d_name))return false;
+				}
+
+			}
+		}
+
 	}
 	return true;
-
 }
 
+bool compareVersions(dirent* a, dirent* b) {
+    string s1 = string(a->d_name);
+    string s2 = string(b->d_name);
+    if (s1.compare(s2) < 0) {
+        return true;
+    }
+    return false;
+}
 
-void rollback(){
-
+void rollback() {
 	string src = ".git/version";
 	DIR* d = opendir(src.c_str());
-	
+
 	if (d) {
- 		struct dirent* p,*q;
-		
+		struct dirent* p, * q;
+
 		content.clear();
-		
- 		while ((p = readdir(d)) != NULL) {
- 			content.push_back(p);
- 		}
- 		
- 		string src1, final_source;
- 		for (int i = 0;i < content.size();i++) {
- 			if (content[i]->d_name != "." && content[i]->d_name != "..") {
- 				if (content[i]->d_name > src1)src1 = content[i]->d_name;
- 			}
- 		}
- 		
- 		current_directory.clear();
- 		
- 		char path[PATH_MAX];
- 		getcwd(path, PATH_MAX);
- 		DIR* e = opendir(path);
- 		if(e){
- 			while ((q = readdir(e)) != NULL) {
- 				current_directory.insert(q->d_name);
- 			}
- 		}
- 		
- 		final_source = ".git/version/" + src1;
- 		
- 		bool check = check_for_version_delete(final_source,path);
- 		
- 		string prev_version, path_prev_version=final_source;
- 		if(check==true){
-	 		remove_dir(&final_source[0]);
-	 		
-	 		content.pop_back();
-	 		
-	 		for (int i = 0;i < content.size();i++) {
-	 			if (content[i]->d_name != "." && content[i]->d_name != "..") {
-	 				if (content[i]->d_name > prev_version)prev_version = content[i]->d_name;
-	 			}
-	 		}
-	 		path_prev_version = ".git/version/" + prev_version;
-	 		//cout<<prev_version<<endl;
- 		}
- 		
- 		
- 		
- 		copy_version(&path_prev_version[0],path);
- 		
- 		
- 		
- 		
- 		
- 		
- 	
- 	}
- 		
 
+		while ((p = readdir(d)) != NULL) {
+			if (strcmp(p->d_name, ".") != 0 && strcmp(p->d_name, "..") != 0) {
+				content.push_back(p);
+			}
+		}
 
+		// sort
+		sort(content.begin(), content.end(), compareVersions);
 
-}
+		for (auto it : content) {
+			cout << it->d_name << endl;
+		}
 
-void retrieve(int version)
-{
-	// Checking the existance of the input version 
-	int existing_versions=countDirectories("./.git/version");
-	if(version>existing_versions)
-	{
-		cout<<"Specified version doesn't exists\n";
-	}
-	// listing all files in the input version
-	else{
-		vector<string> files_in_version;
-		string pathStr="./.git/version/v_"+to_string(version);
-		const char* path = pathStr.c_str();
-		listFiles(path,files_in_version);
-		for(auto &x:files_in_version)
-		{	
-			// finding the last occurance of '/' in the file path
-			int pos=x.find_last_of('/');
-			cout<<x.substr(pos+1)<<endl;
+		string src1, final_source;
+		for (int i = 0;i < content.size();i++) {
+			if (strcmp(content[i]->d_name, ".") != 0 && strcmp(content[i]->d_name, "..") != 0) {
+				if (content[i]->d_name > src1)src1 = content[i]->d_name;
+			}
+		}
+
+		current_directory.clear();
+
+		char path[PATH_MAX];
+		getcwd(path, PATH_MAX);
+		DIR* e = opendir(path);
+		if (e) {
+			while ((q = readdir(e)) != NULL) {
+				current_directory.insert(q->d_name);
+			}
+		}
+
+		final_source = ".git/version/" + src1;
+
+		bool check = check_for_version_delete(final_source, path);
+
+		string prev_version, path_prev_version;
+		if (check == true) {
+			remove_dir(&final_source[0]);
+
+			cout << "Before: " << content.back()->d_name << endl;
+			content.pop_back();
+			cout << "AFter: " << content.back()->d_name << endl;
+
+			for (int i = 0;i < content.size();i++) {
+				if (strcmp(content[i]->d_name, ".") != 0 && strcmp(content[i]->d_name, "..") != 0) {
+					if (content[i]->d_name > prev_version)prev_version = content[i]->d_name;
+				}
+			}
+
+			path_prev_version = ".git/version/" + prev_version;
+			cout << path_prev_version << endl;
+			copy_version(&path_prev_version[0], path);
+		}
+		else {
+			copy_version(&final_source[0], path);
 		}
 	}
 }
 
-void retriveSHA(int version,string hashValue)
-{
+void retrieve(int version) {
 	// Checking the existance of the input version 
-	int existing_versions=countDirectories("./.git/version");
-	if(version>existing_versions)
-	{
-		cout<<"Specified version doesn't exists\n";
+	int existing_versions = countDirectories("./.git/version");
+	if (version > existing_versions) {
+		cout << "Specified version doesn't exists\n";
 	}
 	// listing all files in the input version
-	else{
+	else {
 		vector<string> files_in_version;
-		string pathStr="./.git/version/v_"+to_string(version);
+		string pathStr = "./.git/version/v_" + to_string(version);
 		const char* path = pathStr.c_str();
-		listFiles(path,files_in_version);
-		for(auto &x:files_in_version)
-		{	
+		listFiles(path, files_in_version);
+		for (auto& x : files_in_version) {
 			// finding the last occurance of '/' in the file path
-			int pos=x.find_last_of('/');
+			int pos = x.find_last_of('/');
+			cout << x.substr(pos + 1) << endl;
+		}
+	}
+}
+
+void retriveSHA(int version, string hashValue) {
+	// Checking the existance of the input version 
+	int existing_versions = countDirectories("./.git/version");
+	if (version > existing_versions) {
+		cout << "Specified version doesn't exists\n";
+	}
+	// listing all files in the input version
+	else {
+		vector<string> files_in_version;
+		string pathStr = "./.git/version/v_" + to_string(version);
+		const char* path = pathStr.c_str();
+		listFiles(path, files_in_version);
+		for (auto& x : files_in_version) {
+			// finding the last occurance of '/' in the file path
+			int pos = x.find_last_of('/');
 			// cout<<x.substr(pos+1)<<endl;
-			string sha_calculated=SHA1::from_file(x.substr(pos+1));
-			if(sha_calculated==hashValue)
-			{
-				cout<<x.substr(pos+1)<<endl;
+			string sha_calculated = SHA1::from_file(x.substr(pos + 1));
+			if (sha_calculated == hashValue) {
+				cout << x.substr(pos + 1) << endl;
 				return;
 			}
 		}
-		cout<<"file with given sha value doesn't exists"<<endl;
+		cout << "file with given sha value doesn't exists" << endl;
 	}
-
 }
-
-
 
 // ====================================================================================================================
 int main(int argc, char* argv[]) {
@@ -779,12 +819,16 @@ int main(int argc, char* argv[]) {
 		cout << "Initialized as git repository" << endl;
 	}
 	else if (arg == "add") {
-		add();
-		cout<<"Files Staged Successfully"<<endl;
+		if (argc != 3) {
+			cout << "Nothing specified, nothing added." << endl;
+			cout << "Use . for all the files" << endl;
+			return 0;
+		}
+		add(argv[2]);
 	}
 	else if (arg == "commit") {
 		commit();
-		cout<<"Work Commited SuccessFully"<<endl;
+		cout << "Work Commited SuccessFully" << endl;
 	}
 	else if (arg == "status") {
 		status();
@@ -796,23 +840,21 @@ int main(int argc, char* argv[]) {
 		}
 		push(argv[2]);
 	}
-	else if(arg=="rollback"){
+	else if (arg == "rollback") {
 		rollback();
-		cout<<"Directory Rolledback SuccessFully"<<endl;
+		cout << "Directory Rolledback SuccessFully" << endl;
 	}
 	// ./git retrieve -a vno
-	else if (arg=="retrieve" && strcmp(argv[2],"-a")==0 )
-	{
+	else if (arg == "retrieve" && strcmp(argv[2], "-a") == 0) {
 		// cout<<argv[2]<<" "<<argv[3]<<endl;
 		retrieve(stoi(argv[3]));
 
 	}
 	// ./git retrieve SHAvalue vno
-	else if(arg=="retrieve" )
-	{
+	else if (arg == "retrieve") {
 		// cout<<"retrieve SHA is called\n";
-		string hashValue=argv[2];
-		retriveSHA(stoi(argv[3]),hashValue);
+		string hashValue = argv[2];
+		retriveSHA(stoi(argv[3]), hashValue);
 	}
 	return 0;
 }
