@@ -856,8 +856,12 @@ int main(int argc, char* argv[]) {
 		cout << "Initialized as git repository" << endl;
 	}
 	else if (arg == "add") {
-		add();
-		cout<<"Files Staged Successfully"<<endl;
+		if (argc != 3) {
+			cout << "Nothing specified, nothing added." << endl;
+			cout << "Use . for all the files" << endl;
+			return 0;
+		}
+		add(argv[2]);
 	}
 	else if (arg == "commit") {
 		commit();
