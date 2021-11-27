@@ -5,6 +5,8 @@
 #include<unordered_set>
 #include<string.h>
 #include<iterator>
+#include<map>
+#include<set>
 #include<unistd.h>
 #include<stdlib.h>
 #include<fcntl.h>
@@ -428,6 +430,293 @@ void push(string dest) {
 	copyDirectory(&src[0], &push_loc[0]);
 }
 
+//------------------------Do Not Delete any Function even if it is repeated because they have minor changes----------RollBack---
+
+
+
+set<string>current_directory;
+vector<dirent*> content;
+
+
+void SplitString2(string s, vector<string> &v){
+	
+	string temp = "";
+	for(int i=0;i<s.length();++i){
+		
+		if(s[i]=='/'){
+			v.push_back(temp);
+			temp = "";
+		}
+		else{
+			temp.push_back(s[i]);
+		}
+		
+	}
+	v.push_back(temp);
+	
+}
+
+
+
+void delete_file(string Destination ){
+	unlink(Destination.c_str());
+	return;
+
+
+
+}
+
+
+int remove_dir(const char *path) {
+   DIR *d = opendir(path);
+   size_t path_len = strlen(path);
+   int r = -1;
+
+   if (d) {
+      struct dirent *p;
+
+      r = 0;
+      while (!r && (p=readdir(d))) {
+          int r2 = -1;
+          char *buf;
+          size_t len;
+
+          /* Skip the names "." and ".." as we don't want to recurse on them. */
+          if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+             continue;
+
+          len = path_len + strlen(p->d_name) + 2; 
+          buf =(char *) malloc(len);
+
+          if (buf) {
+             struct stat statbuf;
+
+             snprintf(buf, len, "%s/%s", path, p->d_name);
+             if (!stat(buf, &statbuf)) {
+                if (S_ISDIR(statbuf.st_mode))
+                   r2 = remove_dir(buf);
+                else
+                   r2 = unlink(buf);
+             }
+             free(buf);
+          }
+          r = r2;
+      }
+      closedir(d);
+   }
+
+   if (!r)
+      r = rmdir(path);
+
+   return r;
+}
+
+
+
+void copyFile_roll(string source, string destination, char * d_name) {
+	// cout << source << " " << destination << endl;
+	
+	
+	
+	if(current_directory.find(string(d_name))!=current_directory.end()){
+		delete_file(&(destination)[0]);
+	}
+	 
+	
+	char buff[BUFSIZ];
+	FILE* src = fopen(&source[0], "r");
+	FILE* dest = fopen(&destination[0], "w");
+	size_t size;
+
+	// Copying the contents
+	while ((size = fread(buff, 1, BUFSIZ, src)) > 0) {
+		fwrite(buff, 1, size, dest);
+	}
+	// Copying the permissions
+	struct stat st;
+	stat(&source[0], &st);
+	chmod(&destination[0], st.st_mode);
+	fclose(src);
+	fclose(dest);
+}
+
+void copyDirectory_roll(char* path, char* des, char* d_name) {
+	if(current_directory.find(string(d_name))!=current_directory.end()){
+		remove_dir(&(string(des)+'/'+string(d_name))[0]);
+	}
+ 	
+	int status = mkdir(des, S_IRUSR | S_IWUSR | S_IXUSR);
+	DIR* d;
+	struct dirent* dir;
+	d = opendir(path);
+	if (d) {
+		while ((dir = readdir(d)) != NULL) {
+			if ((string(dir->d_name) == "..") || (string(dir->d_name) == ".")) {
+				continue;
+			}
+			else {
+				string finalpath = string(path) + "/" + string(dir->d_name);
+				char* newpath = new char[finalpath.length() + 1];
+				strcpy(newpath, finalpath.c_str());
+
+				string finaldestpath = string(des) + "/" + string(dir->d_name);
+				char* newdestpath = new char[finaldestpath.length() + 1];
+				strcpy(newdestpath, finaldestpath.c_str());
+
+				struct stat sb;
+				if (stat(newpath, &sb) == -1) {
+					perror("lstat");
+				}
+				else {
+					if ((S_ISDIR(sb.st_mode))) {
+						copyDirectory_roll(newpath, newdestpath,dir->d_name);
+					}
+					else {
+						copyFile_roll(newpath, newdestpath,dir->d_name);
+					}
+				}
+			}
+		}
+	}
+	else {
+		//showError("No such Directory found while copying with path :::::" + string(path));
+	}
+}
+
+// Copies file from path to destination
+void copy_version(char* path, char* des) {
+	DIR* d;
+	struct dirent* dir;
+	d = opendir(path);
+	if (d) {
+		while ((dir = readdir(d)) != NULL) {
+			if ((string(dir->d_name) == "..") || (string(dir->d_name) == ".")) {
+				continue;
+			}
+			else {
+				string finalpath = string(path) + "/" + string(dir->d_name);
+				char* newpath = new char[finalpath.length() + 1];
+				strcpy(newpath, finalpath.c_str());
+
+				string finaldestpath = string(des) + "/" + string(dir->d_name);
+				char* newdestpath = new char[finaldestpath.length() + 1];
+				strcpy(newdestpath, finaldestpath.c_str());
+
+				struct stat sb;
+				if (stat(newpath, &sb) == -1) {
+					perror("lstat");
+				}
+				else {
+				
+					if ((S_ISDIR(sb.st_mode))) {
+						copyDirectory_roll(newpath, newdestpath, dir->d_name);
+					}
+					else {
+						copyFile_roll(newpath, newdestpath,dir->d_name);
+					}
+				}
+			}
+		}
+	}
+	else {
+		//showError("No such Directory found while copying with path :::::" + string(path));
+	}
+}
+
+bool check_for_version_delete(string final_source, string path){
+
+	DIR* d = opendir(final_source.c_str());
+	map<string,bool>new_fd;
+	if(d){
+		struct dirent* p;
+		while ((p = readdir(d)) != NULL) {
+ 			for(auto it:current_directory){
+ 				if(it==p->d_name){
+ 					new_fd[p->d_name]==true;
+ 					SHA1 s,t;
+ 					if(s.from_file(final_source+"/"+p->d_name)!=t.from_file(path+"/"+p->d_name))return false;
+ 				}
+ 				
+ 			}
+ 		}
+	
+	}
+	return true;
+
+}
+
+
+void rollback(){
+
+	string src = ".git/version";
+	DIR* d = opendir(src.c_str());
+	
+	if (d) {
+ 		struct dirent* p,*q;
+		
+		content.clear();
+		
+ 		while ((p = readdir(d)) != NULL) {
+ 			content.push_back(p);
+ 		}
+ 		
+ 		string src1, final_source;
+ 		for (int i = 0;i < content.size();i++) {
+ 			if (content[i]->d_name != "." && content[i]->d_name != "..") {
+ 				if (content[i]->d_name > src1)src1 = content[i]->d_name;
+ 			}
+ 		}
+ 		
+ 		current_directory.clear();
+ 		
+ 		char path[PATH_MAX];
+ 		getcwd(path, PATH_MAX);
+ 		DIR* e = opendir(path);
+ 		if(e){
+ 			while ((q = readdir(e)) != NULL) {
+ 				current_directory.insert(q->d_name);
+ 			}
+ 		}
+ 		
+ 		final_source = ".git/version/" + src1;
+ 		
+ 		bool check = check_for_version_delete(final_source,path);
+ 		
+ 		string prev_version, path_prev_version=final_source;
+ 		if(check==true){
+	 		remove_dir(&final_source[0]);
+	 		
+	 		content.pop_back();
+	 		
+	 		for (int i = 0;i < content.size();i++) {
+	 			if (content[i]->d_name != "." && content[i]->d_name != "..") {
+	 				if (content[i]->d_name > prev_version)prev_version = content[i]->d_name;
+	 			}
+	 		}
+	 		path_prev_version = ".git/version/" + prev_version;
+	 		//cout<<prev_version<<endl;
+ 		}
+ 		
+ 		
+ 		
+ 		copy_version(&path_prev_version[0],path);
+ 		
+ 		
+ 		
+ 		
+ 		
+ 		
+ 	
+ 	}
+ 		
+
+
+
+}
+
+
+
+
 // ====================================================================================================================
 int main(int argc, char* argv[]) {
 
@@ -438,9 +727,11 @@ int main(int argc, char* argv[]) {
 	}
 	else if (arg == "add") {
 		add();
+		cout<<"Files Staged Successfully"<<endl;
 	}
 	else if (arg == "commit") {
 		commit();
+		cout<<"Work Commited SuccessFully"<<endl;
 	}
 	else if (arg == "status") {
 		status();
@@ -451,6 +742,12 @@ int main(int argc, char* argv[]) {
 			return 0;
 		}
 		push(argv[2]);
+	}
+	else if(arg=="rollback"){
+		rollback();
+		cout<<"Directory Rolledback SuccessFully"<<endl;
+		
+	
 	}
 	return 0;
 }
