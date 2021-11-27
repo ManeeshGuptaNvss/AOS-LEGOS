@@ -745,7 +745,6 @@ void rollback() {
 
 		// Writing to log
 		int countDir = countDirectories("./.git/version");
-		string text;
 		time_t rawtime;
 		time(&rawtime);
 		string text = "Rollback\n";
