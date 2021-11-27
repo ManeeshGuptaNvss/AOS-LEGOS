@@ -1,18 +1,10 @@
-#include<iostream>
 #include<fstream>
-#include<vector>
-#include<unordered_map>
-#include<unordered_set>
-#include<string.h>
-#include<iterator>
-#include<map>
-#include<set>
+#include<fcntl.h>
+#include<dirent.h>
 #include<unistd.h>
 #include<stdlib.h>
-#include<fcntl.h>
 #include<sys/stat.h>
-#include<dirent.h>
-#include<algorithm>
+#include<bits/stdc++.h>
 
 #include"sha1.hpp"
 
@@ -82,7 +74,6 @@ vector<string> splitString(string& str) {
 	return result;
 }
 
-
 // Read line by line from the file
 vector<string> readFile(string file_name) {
 	// Reading the file
@@ -124,7 +115,6 @@ unordered_map<string, string> readFileMap(string file_name) {
 	ifs.close();
 	return result;
 }
-
 
 // Copies file from source to destination
 void copyFile(string source, string destination) {
@@ -261,10 +251,6 @@ bool makeDirectory(const string& path) {
 // Update log file
 void updateLog(string text) {
 	// Open log file
-	int countDir = countDirectories("./.git/version");
-	time_t rawtime;
-	time(&rawtime);
-
 	FILE* fp = fopen("./.git/log.txt", "a");
 	fwrite(&text[0], 1, text.length(), fp);
 	fclose(fp);
@@ -461,7 +447,7 @@ void status() {
 		cout << KRED "(Untracked)\t" << it << RESET << endl;
 	}
 	for (auto it : to_be_committed_files) {
-		cout << KGRN "(To be committed)\t" << it << RESET << endl;
+		cout << KGRN "(Staged)\t" << it << RESET << endl;
 	}
 	for (auto it : modified_files) {
 		cout << KYEL "(Modified)\t" << it << RESET << endl;
@@ -488,7 +474,7 @@ void push(string dest) {
 	updateLog(text);
 }
 
-//------------------------Do Not Delete any Function even if it is repeated because they have minor changes----------RollBack---
+//------------------------ Do Not Delete any Function even if it is repeated because they have minor changes ----------RollBack---
 
 set<string>current_directory;
 vector<dirent*> content;
@@ -560,12 +546,9 @@ int remove_dir(const char* path) {
 
 void copyFile_roll(string source, string destination, char* d_name) {
 	// cout << source << " " << destination << endl;
-
 	if (current_directory.find(string(d_name)) != current_directory.end()) {
 		delete_file(&(destination)[0]);
 	}
-
-
 	char buff[BUFSIZ];
 	FILE* src = fopen(&source[0], "r");
 	FILE* dest = fopen(&destination[0], "w");
@@ -667,7 +650,6 @@ void copy_version(char* path, char* des) {
 }
 
 bool check_for_version_delete(string final_source, string path) {
-
 	DIR* d = opendir(final_source.c_str());
 	map<string, bool>new_fd;
 	if (d) {
@@ -688,12 +670,12 @@ bool check_for_version_delete(string final_source, string path) {
 }
 
 bool compareVersions(dirent* a, dirent* b) {
-    string s1 = string(a->d_name);
-    string s2 = string(b->d_name);
-    if (s1.compare(s2) < 0) {
-        return true;
-    }
-    return false;
+	string s1 = string(a->d_name);
+	string s2 = string(b->d_name);
+	if (s1.compare(s2) < 0) {
+		return true;
+	}
+	return false;
 }
 
 void rollback() {
@@ -710,7 +692,6 @@ void rollback() {
 				content.push_back(p);
 			}
 		}
-
 		// sort
 		sort(content.begin(), content.end(), compareVersions);
 
@@ -761,6 +742,16 @@ void rollback() {
 		else {
 			copy_version(&final_source[0], path);
 		}
+
+		// Writing to log
+		int countDir = countDirectories("./.git/version");
+		string text;
+		time_t rawtime;
+		time(&rawtime);
+		string text = "Rollback\n";
+		text += "version: v_" + to_string(countDir + 1) + " --> v_" + to_string(countDir) + "\n";
+		text += "date: " + string(ctime(&rawtime)) + "\n\n";
+		updateLog(text);
 	}
 }
 
@@ -810,9 +801,9 @@ void retriveSHA(int version, string hashValue) {
 	}
 }
 
-// ====================================================================================================================
-int main(int argc, char* argv[]) {
+// =================================================== main() =============================================================
 
+int main(int argc, char* argv[]) {
 	string arg = argv[1];
 	if (arg == "init") {
 		init();
@@ -825,6 +816,7 @@ int main(int argc, char* argv[]) {
 			return 0;
 		}
 		add(argv[2]);
+		cout << "Work Staged Successfully" << endl;
 	}
 	else if (arg == "commit") {
 		commit();
@@ -835,7 +827,7 @@ int main(int argc, char* argv[]) {
 	}
 	else if (arg == "push") {
 		if (argc != 3) {
-			cout << "[ERR]Enter the valid number of argumenets" << endl;
+			cout << "Enter the valid number of argumenets" << endl;
 			return 0;
 		}
 		push(argv[2]);
@@ -848,13 +840,15 @@ int main(int argc, char* argv[]) {
 	else if (arg == "retrieve" && strcmp(argv[2], "-a") == 0) {
 		// cout<<argv[2]<<" "<<argv[3]<<endl;
 		retrieve(stoi(argv[3]));
-
 	}
 	// ./git retrieve SHAvalue vno
 	else if (arg == "retrieve") {
 		// cout<<"retrieve SHA is called\n";
 		string hashValue = argv[2];
 		retriveSHA(stoi(argv[3]), hashValue);
+	}
+	else {
+		cout << "Enter valid git command" << endl;
 	}
 	return 0;
 }
