@@ -219,17 +219,13 @@ bool makeDirectory(const string& path) {
 }
 
 // Update log file
-void updateLog() {
+void updateLog(string text) {
 	// Open log file
 	int countDir = countDirectories("./.git/version");
 	time_t rawtime;
 	time(&rawtime);
 
 	FILE* fp = fopen("./.git/log.txt", "a");
-
-	string text = "commit\n";
-	text += "version: v_" + to_string(countDir + 1) + "\n";
-	text += "date: " + string(ctime(&rawtime)) + "\n\n";
 	fwrite(&text[0], 1, text.length(), fp);
 	fclose(fp);
 }
@@ -310,52 +306,88 @@ void readStatusFile() {
 }
 
 // Print status files
-void printStatus(vector<string> data, const char* color) {
+void printStatus(vector<string> data, const char* color, unordered_set<string>& addFiles, vector<string>& result) {
+	bool flag = true;
 	for (auto j : data) {
-		cout << "\t";
-		cout << color + j + RESET << endl;
+		if (addFiles.find(j) != addFiles.end()) {
+			result.push_back(color + j + RESET);
+		}
+		else {
+			if (flag) {
+				cout << "Untracked Files:" << endl;
+				flag = false;
+			}
+			cout << "\t" << color + j + RESET << endl;
+		}
 	}
-	cout << endl;
 }
+
 
 // Checking which files are newly created, modified and deleted
 void checkFiles() {
 	vector<string> files;
-	unordered_set<string> us;
 	listFiles(".", files);
-
-	for (int i = 0; i < files.size(); i++) {
-		// If the file is not present in status then it is newly created file
-		if (statusFiles.find(files[i]) == statusFiles.end()) {
-			newFiles.push_back(files[i]);
+	// Get files from the add.txt file
+	unordered_set<string> addFiles;
+	ifstream ifs;
+	ifs.open("./.git/add.txt");
+	while (!ifs.eof()) {
+		string line, stData, data;
+		int flag;
+		if (getline(ifs, line)) {
+			addFiles.insert(line);
 		}
-		else {
-			string hash = SHA1::from_file(files[i]);
-			if (hash != statusFiles[files[i]]) {
-				modifiedFiles.push_back(files[i]);
+	}
+	ifs.close();
+
+	vector<string> result;
+	vector<string> untrackedFiles;
+	vector<string> trackedFiles;
+
+	unordered_set<string> us;
+	//okay
+	for (auto i : files) {
+		us.insert(i);
+		if (statusFiles.find(i) != statusFiles.end()) {
+			string hash = SHA1::from_file(i);
+			if (statusFiles[i] != hash) {
+				result.push_back(i);
 			}
 		}
-		us.insert(files[i]);
-	}
-	for (auto it : statusFiles) {
-		if (us.find(it.first) == us.end()) {
-			deletedFiles.push_back(it.first);
+		if (addFiles.find(i) == addFiles.end()) {
+			if (statusFiles.find(i) == statusFiles.end())
+				untrackedFiles.push_back(i);
+		}
+		else {
+			trackedFiles.push_back(i);
 		}
 	}
-	if (newFiles.size() == 0 && modifiedFiles.size() == 0 && deletedFiles.size() == 0) {
-		cout << "Working directory clean" << endl;
+	for (auto i : statusFiles) {
+		if (us.find(i.first) == us.end()) {
+			result.push_back(i.first + " (deleted)");
+		}
 	}
-	else {
+	// so far so good
+	if (untrackedFiles.size() != 0) {
+		cout << "Untracked files:" << endl;
+		for (auto i : untrackedFiles) {
+			cout << KRED "\t" << i + RESET << endl;
+		}
+	}
+	if (trackedFiles.size() != 0) {
 		cout << "Changes to be committed:" << endl;
-		if (newFiles.size() != 0) {
-			printStatus(newFiles, KGRN);
+		for (auto i : trackedFiles) {
+			cout << KGRN "\t" << i + RESET << endl;
 		}
-		if (modifiedFiles.size() != 0) {
-			printStatus(modifiedFiles, KYEL);
+	}
+	if (result.size() != 0) {
+		cout << "Modified files:" << endl;
+		for (auto i : result) {
+			cout << KYEL "\t" << i + RESET << endl;
 		}
-		if (deletedFiles.size() != 0) {
-			printStatus(deletedFiles, KRED);
-		}
+	}
+	if (untrackedFiles.size() == 0 && trackedFiles.size() == 0 && result.size() == 0) {
+		cout << "Working directory clean" << endl;
 	}
 }
 
@@ -378,11 +410,25 @@ void init() {
 	open((HomeDir + "/add.txt").c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 }
 
-void add() {
+void add(string file) {
 	vector<string> files;
-	listFiles(".", files);
+	vector<string> newFiles;
+	readStatusFile();
+	if (file == ".") {
+		listFiles(".", files);
+		for (auto i : files) {
+			string hash = SHA1::from_file(i);
+			if (statusFiles.find(i) == statusFiles.end() || statusFiles[i] != hash) {
+				newFiles.push_back(i);
+			}
+		}
+	}
+	else {
+		files.push_back(file);
+	}
 	string dest = "./.git/add.txt";
-	writeData(files, dest);
+	writeData(newFiles, dest);
+	updateStatus(files);
 }
 
 void commit() {
@@ -403,12 +449,34 @@ void commit() {
 	}
 
 	// 1. Update the log.txt
-	updateLog();
-	vector<string> files = readFile("./.git/add.txt");
+	int countDir = countDirectories("./.git/version");
+	time_t rawtime;
+	time(&rawtime);
+	string text = "commit\n";
+	text += "version: v_" + to_string(countDir + 1) + "\n";
+	text += "date: " + string(ctime(&rawtime)) + "\n\n";
+	updateLog(text);
+
 	// 2. Create a new version folder and add the files in it
+	vector<string> files = readFile("./.git/add.txt");
 	addFilesToVersionDir(files);
-	// 3. Update the status.txt 
+
+	readStatusFile();
+	for (auto i : files) {
+		// i is a new file or modified version of a file in the previous version
+		// if old version exists, remove it
+		string hash = SHA1::from_file(i);
+		if (statusFiles.find(i) != statusFiles.end()) {
+			statusFiles.erase(i);
+		}
+	}
+
+	// now update files list
+	for (auto i : statusFiles) {
+		files.push_back(i.first);
+	}
 	updateStatus(files);
+
 	// 4. Delete the data in add.txt
 	string file = "./.git/add.txt";
 	deleteData(file);
@@ -428,6 +496,15 @@ void push(string dest) {
 	src += "/v_" + to_string(count);
 
 	copyDirectory(&src[0], &push_loc[0]);
+
+	// Update the log.txt
+	int countDir = countDirectories("./.git/version");
+	time_t rawtime;
+	time(&rawtime);
+	string text = "commit\n";
+	// text += "version: v_" + to_string(countDir + 1) + "\n";
+	text += "date: " + string(ctime(&rawtime)) + "\n\n";
+	updateLog(text);
 }
 
 //------------------------Do Not Delete any Function even if it is repeated because they have minor changes----------RollBack---
