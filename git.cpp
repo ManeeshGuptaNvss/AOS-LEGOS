@@ -743,7 +743,6 @@ void getDirContents(string path, vector<string>& contents) {
 	sort(contents.begin(), contents.end());
 }
 
-
 void deleteFile(string path) {
 	struct stat fileInfo;
 	if (stat(&path[0], &fileInfo) == 0) {
@@ -942,6 +941,26 @@ void diff() {
 	}
 }
 
+void pull(string directory) {
+	string cwd;
+	char buff[PATH_MAX];
+	getcwd(buff, PATH_MAX);
+	cwd = string(buff);
+
+	chdir(&directory[0]);
+
+	// Get the files from the directory and store in the current directory
+	vector<string> files;
+	listFiles(".", files);
+
+	addFilesToVersionDir(files, cwd);
+	chdir(&cwd[0]);
+
+	// Create .git directory
+	init();
+}
+
+
 // =================================================== main() =============================================================
 
 int main(int argc, char* argv[]) {
@@ -996,6 +1015,13 @@ int main(int argc, char* argv[]) {
 	}
 	else if (arg == "diff") {
 		diff();
+	}
+	else if (arg == "pull") {
+		if (argc != 3) {
+			cout << "Enter the valid number of argumenets" << endl;
+			return 0;
+		}
+		pull(argv[2]);
 	}
 	else {
 		cout << "Enter valid git command" << endl;
