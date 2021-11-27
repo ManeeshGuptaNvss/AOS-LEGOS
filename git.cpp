@@ -705,8 +705,10 @@ bool check_for_version_delete(string final_source, string path) {
 			for (auto it : current_directory) {
 				if (it == p->d_name) {
 					new_fd[p->d_name] == true;
-					SHA1 s, t;
-					if (s.from_file(final_source + "/" + p->d_name) != t.from_file(path + "/" + p->d_name))return false;
+					string s = SHA1::from_file(final_source + "/" + p->d_name);
+					string t = SHA1::from_file(path + "/" + p->d_name);
+					if (s != t)
+						return false;
 				}
 
 			}
@@ -778,14 +780,6 @@ void deleteFolder(vector<string> files) {
 
 void rollback() {
 
-	// Delete files
-	char buff[PATH_MAX];
-	getcwd(buff, PATH_MAX);
-	string cwd = string(buff);
-	vector<string> dirContents;
-	getDirContents(cwd, dirContents);
-	deleteFolder(dirContents);
-
 	string src = ".git/version";
 	DIR* d = opendir(src.c_str());
 
@@ -838,37 +832,63 @@ void rollback() {
 
 			path_prev_version = ".git/version/" + prev_version;
 			// cout << path_prev_version << endl;
+				// Delete files
+			char buff[PATH_MAX];
+			getcwd(buff, PATH_MAX);
+			string cwd = string(buff);
+			vector<string> dirContents;
+			getDirContents(cwd, dirContents);
+			deleteFolder(dirContents);
+
 			copy_version(&path_prev_version[0], path);
-		}
-		else {
-			copy_version(&final_source[0], path);
-		}
 
-		// Writing to log
-		int countDir = countDirectories("./.git/version");
-		time_t rawtime;
-		time(&rawtime);
-		string text = "Rollback\n";
-		text += "version: v_" + to_string(countDir + 1) + " --> v_" + to_string(countDir) + "\n";
-		text += "date: " + string(ctime(&rawtime)) + "\n\n";
-		updateLog(text);
-
-		// Deleting the extra files
-
-		char buff[PATH_MAX];
-		getcwd(buff, PATH_MAX);
-		string cwd = string(buff);
-
-		// Find the files in the previous version
-		vector<string> previous_version_files;
-		if (countDir != 0) {
-			// Find the files in that directory
-			string folder = "./.git/version/v_" + to_string(countDir);
-			chdir(&folder[0]);
+			// Find the files in the previous version
+			vector<string> previous_version_files;
+			chdir(&path_prev_version[0]);
 			listFiles(".", previous_version_files);
-			string dest = "../v_" + to_string(countDir + 1);
+			string dest = "../../../";
 			addFilesToVersionDir(previous_version_files, dest);
 			chdir(&cwd[0]);
+
+			// Writing to log
+			int countDir = countDirectories("./.git/version");
+			time_t rawtime;
+			time(&rawtime);
+			string text = "Rollback\n";
+			text += "version: v_" + to_string(countDir + 1) + " --> v_" + to_string(countDir) + "\n";
+			text += "date: " + string(ctime(&rawtime)) + "\n\n";
+			updateLog(text);
+		}
+		else {
+			// Files changed 
+			// No version folder is deleted
+				// Delete files
+			char buff[PATH_MAX];
+			getcwd(buff, PATH_MAX);
+			string cwd = string(buff);
+			vector<string> dirContents;
+			getDirContents(cwd, dirContents);
+			deleteFolder(dirContents);
+
+			copy_version(&final_source[0], path);
+			// Deleting the extra files
+			// Find the files in the previous version
+			vector<string> previous_version_files;
+			chdir(&final_source[0]);
+			listFiles(".", previous_version_files);
+			string dest = "../../../";
+			addFilesToVersionDir(previous_version_files, dest);
+			chdir(&cwd[0]);
+
+			// Writing to log
+			int countDir = countDirectories("./.git/version");
+			time_t rawtime;
+			time(&rawtime);
+			string text = "Rollback\n";
+			text += "Rolled back to latest commit\n";
+			text += "date: " + string(ctime(&rawtime)) + "\n\n";
+			updateLog(text);
+
 		}
 
 	}
@@ -960,7 +980,13 @@ void pull(string directory) {
 	init();
 }
 
-
+void log() {
+	vector<string> text = readFile("./.git/log.txt");
+	cout << endl;
+	for (auto it : text) {
+		cout << it << endl;
+	}
+}
 // =================================================== main() =============================================================
 
 int main(int argc, char* argv[]) {
@@ -1023,8 +1049,12 @@ int main(int argc, char* argv[]) {
 		}
 		pull(argv[2]);
 	}
+	else if (arg == "log") {
+		log();
+	}
 	else {
 		cout << "Enter valid git command" << endl;
 	}
 	return 0;
 }
+
