@@ -257,15 +257,15 @@ void updateLog(string text) {
 }
 
 // Copy files into the new version directory
-void addFilesToVersionDir(vector<string>& files) {
+void addFilesToVersionDir(vector<string>& files, string destination) {
 	// Create the version Directory
-	string destination = "./.git/version";
-	int countDir = countDirectories(destination);
-	destination += +"/v_" + to_string(countDir + 1);
-	if (mkdir(&destination[0], 0777) == -1) {
-		perror("Version Directory not created");
-		return;
-	}
+	// string destination = "./.git/version";
+	// int countDir = countDirectories(destination);
+	// destination += "/v_" + to_string(countDir);
+	// if (mkdir(&destination[0], 0777) == -1) {
+	// 	perror("Version Directory not created");
+	// 	return;
+	// }
 	// Add files in the version directory
 	// Read names from add.txt file
 	for (int i = 0; i < files.size(); i++) {
@@ -289,6 +289,11 @@ void addFilesToVersionDir(vector<string>& files) {
 void deleteData(string file) {
 	FILE* fp = fopen(&file[0], "w");
 	fclose(fp);
+}
+
+void delete_file(string Destination) {
+	unlink(Destination.c_str());
+	return;
 }
 
 // Updates the status.txt file with the given files
@@ -344,7 +349,8 @@ void add(string file) {
 	else {
 		// If it's a directory
 		if (isDirExist(file)) {
-			listFiles(&file[0], files_to_be_added);
+			string folder = "./" + file;
+			listFiles(&folder[0], files_to_be_added);
 		}
 		// If it's a file
 		else {
@@ -392,12 +398,61 @@ void commit() {
 	text += "date: " + string(ctime(&rawtime)) + "\n\n";
 	updateLog(text);
 
-	// 2. Adding files to status.txt
 	// Read from status.txt 
 	unordered_map<string, string> statusFiles = readFileMap("./.git/status.txt");
-	// read from add.txt
+	// Read from add.txt
 	vector<string> addFiles = readFile("./.git/add.txt");
-	// Remove if the file is already in status.txt 
+
+	// 2. Create a new version folder and add the files in it
+	string destination = "./.git/version/v_";
+	destination += to_string(countDir + 1);
+
+	if (mkdir(&destination[0], 0777) == -1) {
+		perror("Version Directory not created");
+		return;
+	}
+
+	char buff[PATH_MAX];
+	getcwd(buff, PATH_MAX);
+	string cwd = string(buff);
+
+	// Find all files in the current directory
+	vector<string> allFiles;
+	listFiles(".", allFiles);
+	unordered_set<string> allFilesSet;
+	for (auto it : allFiles) {
+		allFilesSet.insert(it);
+	}
+
+	vector<string> previous_version_files;
+	// Add previous_version_files to the new version folder
+	if (countDir != 0) {
+		// Find the files in that directory
+		string folder = "./.git/version/v_" + to_string(countDir);
+		chdir(&folder[0]);
+		listFiles(".", previous_version_files);
+		chdir(&cwd[0]);
+		vector<string> files;
+		for (auto it : previous_version_files) {
+			struct stat fileInfo;
+			// File exists
+			if (stat(&it[0], &fileInfo) == 0) {
+				files.push_back(it);
+			}
+			else {
+				statusFiles.erase(it);
+			}
+		}
+		chdir(&folder[0]);
+		string dest = "../v_" + to_string(countDir + 1);
+		addFilesToVersionDir(files, dest);
+		chdir(&cwd[0]);
+	}
+
+	// Now add the new/modified files 
+	addFilesToVersionDir(addFiles, destination);
+
+	// 3. Adding files to status.txt
 	for (auto it : addFiles) {
 		if (statusFiles.find(it) != statusFiles.end()) {
 			statusFiles.erase(it);
@@ -408,9 +463,6 @@ void commit() {
 		addFiles.push_back(it.first);
 	}
 	updateStatus(addFiles);
-
-	// 3. Create a new version folder and add the files in it
-	addFilesToVersionDir(addFiles);
 
 	// 4. Delete add.txt data
 	deleteData("./.git/add.txt");
@@ -493,11 +545,6 @@ void SplitString2(string s, vector<string>& v) {
 
 	}
 	v.push_back(temp);
-}
-
-void delete_file(string Destination) {
-	unlink(Destination.c_str());
-	return;
 }
 
 int remove_dir(const char* path) {
@@ -678,7 +725,68 @@ bool compareVersions(dirent* a, dirent* b) {
 	return false;
 }
 
+void getDirContents(string path, vector<string>& contents) {
+	// Clearing the contents vector
+	contents.clear();
+
+	// Opens the directory with cwdPath
+	DIR* cwd = opendir(&path[0]);
+	struct dirent* files;
+	// Reading the contents of the directory
+	while ((files = readdir(cwd)) != NULL) {
+		string name = files->d_name;
+		contents.push_back(name);
+	}
+	// Closing the directory
+	closedir(cwd);
+	// Storing the contents in sorted order
+	sort(contents.begin(), contents.end());
+}
+
+
+void deleteFile(string path) {
+	struct stat fileInfo;
+	if (stat(&path[0], &fileInfo) == 0) {
+		remove(&path[0]);
+	}
+}
+
+void deleteFolder(vector<string> files) {
+	for (int i = 0; i < files.size(); i++) {
+		if (files[i] == "." || files[i] == ".." || files[i] == "git" || files[i] == ".git" || files[i] == "git.cpp")
+			continue;
+		string path = files[i];
+		// Directory delete
+		if (isDirExist(path)) {
+			// Get all the contents present in the files
+			vector<string> dirContents;
+			getDirContents(path, dirContents);
+			// Making all the names of the retireved folders absolute path
+			for (int j = 0; j < dirContents.size(); j++) {
+				if (dirContents[j] == "." || dirContents[j] == "..")
+					continue;
+				dirContents[j] = path + "/" + dirContents[j];
+			}
+			deleteFolder(dirContents);
+			rmdir(&path[0]);
+		}
+		// File Delete
+		else {
+			remove(&path[0]);
+		}
+	}
+}
+
 void rollback() {
+
+	// Delete files
+	char buff[PATH_MAX];
+	getcwd(buff, PATH_MAX);
+	string cwd = string(buff);
+	vector<string> dirContents;
+	getDirContents(cwd, dirContents);
+	deleteFolder(dirContents);
+
 	string src = ".git/version";
 	DIR* d = opendir(src.c_str());
 
@@ -694,10 +802,6 @@ void rollback() {
 		}
 		// sort
 		sort(content.begin(), content.end(), compareVersions);
-
-		for (auto it : content) {
-			cout << it->d_name << endl;
-		}
 
 		string src1, final_source;
 		for (int i = 0;i < content.size();i++) {
@@ -725,9 +829,7 @@ void rollback() {
 		if (check == true) {
 			remove_dir(&final_source[0]);
 
-			cout << "Before: " << content.back()->d_name << endl;
 			content.pop_back();
-			cout << "AFter: " << content.back()->d_name << endl;
 
 			for (int i = 0;i < content.size();i++) {
 				if (strcmp(content[i]->d_name, ".") != 0 && strcmp(content[i]->d_name, "..") != 0) {
@@ -736,7 +838,7 @@ void rollback() {
 			}
 
 			path_prev_version = ".git/version/" + prev_version;
-			cout << path_prev_version << endl;
+			// cout << path_prev_version << endl;
 			copy_version(&path_prev_version[0], path);
 		}
 		else {
@@ -751,6 +853,25 @@ void rollback() {
 		text += "version: v_" + to_string(countDir + 1) + " --> v_" + to_string(countDir) + "\n";
 		text += "date: " + string(ctime(&rawtime)) + "\n\n";
 		updateLog(text);
+
+		// Deleting the extra files
+
+		char buff[PATH_MAX];
+		getcwd(buff, PATH_MAX);
+		string cwd = string(buff);
+
+		// Find the files in the previous version
+		vector<string> previous_version_files;
+		if (countDir != 0) {
+			// Find the files in that directory
+			string folder = "./.git/version/v_" + to_string(countDir);
+			chdir(&folder[0]);
+			listFiles(".", previous_version_files);
+			string dest = "../v_" + to_string(countDir + 1);
+			addFilesToVersionDir(previous_version_files, dest);
+			chdir(&cwd[0]);
+		}
+
 	}
 }
 
@@ -800,10 +921,37 @@ void retriveSHA(int version, string hashValue) {
 	}
 }
 
+void diff() {
+	// Get the files in the current folder
+	vector<string> allFiles;
+	listFiles(".", allFiles);
+
+	int countDir = countDirectories("./.git/version");
+	string destination = "./.git/version/v_" + to_string(countDir);
+	for (auto it : allFiles) {
+		string path = destination + "/" + it;
+		struct stat fileInfo;
+		// file present in version folder
+		cout << endl << "FILE NAME: " << path << endl;
+		cout << "##############################################" << endl;
+		if (stat(&path[0], &fileInfo) == 0) {
+			string mo = "diff -y --suppress-common-lines " + path + " " + it;
+			system(&mo[0]);
+		}
+		cout << "##############################################" << endl << endl;
+	}
+}
+
 // =================================================== main() =============================================================
 
 int main(int argc, char* argv[]) {
+
+	if (argc == 1) {
+		cout << "Enter valid arguments" << endl;
+		return 0;
+	}
 	string arg = argv[1];
+
 	if (arg == "init") {
 		init();
 		cout << "Initialized as git repository" << endl;
@@ -845,6 +993,9 @@ int main(int argc, char* argv[]) {
 		// cout<<"retrieve SHA is called\n";
 		string hashValue = argv[2];
 		retriveSHA(stoi(argv[3]), hashValue);
+	}
+	else if (arg == "diff") {
+		diff();
 	}
 	else {
 		cout << "Enter valid git command" << endl;
